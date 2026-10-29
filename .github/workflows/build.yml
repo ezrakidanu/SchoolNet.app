@@ -1,13 +1,23 @@
-name: Build SchoolNet APK
+name: Build SchoolNet Android APK
 
 on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: Optional HTTPS FastAPI base URL (or configure repository variable SCHOOLNET_API_BASE_URL)
+        required: false
+        type: string
+
+permissions:
+  contents: read
 
 jobs:
   build:
+    name: Build release APK
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
@@ -22,21 +32,38 @@ jobs:
       - name: Set up Flutter SDK
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.x'
+          flutter-version: '3.47.9'
           channel: 'stable'
+          cache: true
 
       - name: Install dependencies
         run: flutter pub get
-        working-directory: ./SchoolNetApp_Source
+        working-directory: frontend
+
+      - name: Analyze Flutter source
+        run: flutter analyze
+        working-directory: frontend
 
       - name: Build Android APK
-        run: flutter build apk --release
-        working-directory: ./SchoolNetApp_Source
+        working-directory: frontend
+        env:
+          API_BASE_URL: ${{ inputs.api_base_url || vars.SCHOOLNET_API_BASE_URL }}
+        run: |
+          if [[ -n "$API_BASE_URL" ]]; then
+            case "$API_BASE_URL" in
+              https://*) ;;
+              *) echo "API_BASE_URL must use HTTPS for a release APK." >&2; exit 1 ;;
+            esac
+            flutter build apk --release --dart-define="API_BASE_URL=$API_BASE_URL"
+          else
+            flutter build apk --release
+          fi
 
-      - name: Upload APK Artifact
+      - name: Upload app-release.apk
         uses: actions/upload-artifact@v4
         with:
-          name: schoolnet-apk
-          path: SchoolNetApp_Source/build/app/outputs/flutter-apk/app-release.apk
-
+          name: schoolnet-app-release-apk
+          path: frontend/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
 

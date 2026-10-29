@@ -1,0 +1,21 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.db
+.env
+.DS_Store
+
+# Flutter / Dart
+.dart_tool/
+.packages
+.pub-cache/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+coverage/
+
+# Android build output
+android/.gradle/
+android/local.properties
+android/key.properties
+*.jks
