@@ -44,6 +44,10 @@ jobs:
         run: flutter analyze
         working-directory: frontend
 
+      - name: Test Flutter source
+        run: flutter test
+        working-directory: frontend
+
       - name: Build Android APK
         working-directory: frontend
         env:
@@ -67,3 +71,14 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Build demo-mode APK
+        run: flutter build apk --release --dart-define=SCHOOLNET_DEMO_MODE=true
+        working-directory: frontend
+
+      - name: Upload demo app-release.apk
+        uses: actions/upload-artifact@v4
+        with:
+          name: schoolnet-app-demo-apk
+          path: frontend/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 14

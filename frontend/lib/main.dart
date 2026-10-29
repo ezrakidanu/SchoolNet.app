@@ -5,12 +5,14 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'announcement_search.dart';
+import 'demo_api.dart';
 
 const navy = Color(0xFF17345B);
 const teal = Color(0xFF11B6A5);
 const mint = Color(0xFFE4F8F5);
 const apiBase = String.fromEnvironment('API_BASE_URL',
     defaultValue: 'http://10.0.2.2:8000');
+const bool demoMode = schoolnetDemoMode;
 const secureStore = FlutterSecureStorage();
 final themeModeProvider = StateProvider<ThemeMode>((ref) => ThemeMode.light);
 
@@ -97,6 +99,7 @@ class Api {
   static Future<Map<String, dynamic>> post(
       String path, Map<String, dynamic> body,
       {String? token}) async {
+    if (demoMode) return DemoApi.post(path, body, token: token);
     final response = await http
         .post(uri(path),
             headers: {
@@ -116,6 +119,7 @@ class Api {
   }
 
   static Future<List<dynamic>> getList(String path, String token) async {
+    if (demoMode) return DemoApi.getList(path, token: token);
     final response = await http.get(uri(path), headers: {
       'Authorization': 'Bearer $token'
     }).timeout(const Duration(seconds: 15));
@@ -124,6 +128,18 @@ class Api {
       throw Exception(data is Map ? data['detail'] : 'Request failed');
     }
     return data as List<dynamic>;
+  }
+
+  static Future<Map<String, dynamic>> getMap(String path, String token) async {
+    if (demoMode) return DemoApi.getMap(path, token: token);
+    final response = await http.get(uri(path), headers: {
+      'Authorization': 'Bearer $token'
+    }).timeout(const Duration(seconds: 15));
+    final decoded = jsonDecode(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(decoded is Map ? decoded['detail'] : 'Request failed');
+    }
+    return Map<String, dynamic>.from(decoded as Map);
   }
 }
 
@@ -134,7 +150,7 @@ class SignInPage extends StatefulWidget {
 }
 
 class _SignInPageState extends State<SignInPage> {
-  RoleInfo selected = roles.first;
+  RoleInfo selected = demoMode ? roles[2] : roles.first;
   bool communitySignup = false;
   bool busy = false;
   final school = TextEditingController();
@@ -162,19 +178,41 @@ class _SignInPageState extends State<SignInPage> {
               'password': password.text,
               'role': selected.api
             });
-      final token = result['access_token'] as String;
-      final user = Map<String, dynamic>.from(result['user'] as Map);
-      await secureStore.write(key: 'token', value: token);
-      if (!mounted) return;
-      if (user['force_password_change'] == true) {
-        Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => PasswordResetPage(token: token)));
-      } else {
-        Navigator.of(context).pushReplacement(MaterialPageRoute(
-            builder: (_) => PortalPage(token: token, user: user)));
-      }
+      await _completeLogin(result);
     } catch (e) {
       setState(() => error = e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> _completeLogin(Map<String, dynamic> result) async {
+    final token = result['access_token'] as String;
+    final user = Map<String, dynamic>.from(result['user'] as Map);
+    await secureStore.write(key: 'token', value: token);
+    if (!mounted) return;
+    if (user['force_password_change'] == true) {
+      Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => PasswordResetPage(token: token)));
+    } else {
+      Navigator.of(context).pushReplacement(MaterialPageRoute(
+          builder: (_) => PortalPage(token: token, user: user)));
+    }
+  }
+
+  Future<void> _openDemoPortal() async {
+    if (!demoMode) return;
+    setState(() {
+      busy = true;
+      error = null;
+    });
+    try {
+      final result = await Api.post('/auth/login', {'role': selected.api});
+      await _completeLogin(result);
+    } catch (e) {
+      if (mounted) {
+        setState(() => error = e.toString().replaceFirst('Exception: ', ''));
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -222,6 +260,22 @@ class _SignInPageState extends State<SignInPage> {
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                       color: Color(0xFF65758A), fontSize: 14)),
+                              if (demoMode) ...[
+                                const SizedBox(height: 16),
+                                Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                        color: const Color(0xFFFFF3D5),
+                                        borderRadius:
+                                            BorderRadius.circular(12)),
+                                    child: const Text(
+                                        'DEMO MODE — sample data only. No backend requests or real credentials are used.',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                            color: Color(0xFF795600),
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 12))),
+                              ],
                               const SizedBox(height: 26),
                               if (!communitySignup) ...[
                                 const Text('Choose your portal',
@@ -256,26 +310,28 @@ class _SignInPageState extends State<SignInPage> {
                                         fontWeight: FontWeight.w700,
                                         color: navy)),
                               ],
-                              const SizedBox(height: 18),
-                              _field(school, 'School code',
-                                  Icons.apartment_rounded),
-                              if (communitySignup) ...[
+                              if (!demoMode || communitySignup) ...[
+                                const SizedBox(height: 18),
+                                _field(school, 'School code',
+                                    Icons.apartment_rounded),
+                                if (communitySignup) ...[
+                                  const SizedBox(height: 11),
+                                  _field(name, 'Full name',
+                                      Icons.person_outline_rounded)
+                                ],
                                 const SizedBox(height: 11),
-                                _field(name, 'Full name',
-                                    Icons.person_outline_rounded)
+                                _field(email, 'Email address',
+                                    Icons.alternate_email_rounded,
+                                    keyboard: TextInputType.emailAddress),
+                                const SizedBox(height: 11),
+                                _field(
+                                    password,
+                                    communitySignup
+                                        ? 'Create password (10+ characters)'
+                                        : 'Password / temporary PIN',
+                                    Icons.lock_outline_rounded,
+                                    obscure: true),
                               ],
-                              const SizedBox(height: 11),
-                              _field(email, 'Email address',
-                                  Icons.alternate_email_rounded,
-                                  keyboard: TextInputType.emailAddress),
-                              const SizedBox(height: 11),
-                              _field(
-                                  password,
-                                  communitySignup
-                                      ? 'Create password (10+ characters)'
-                                      : 'Password / temporary PIN',
-                                  Icons.lock_outline_rounded,
-                                  obscure: true),
                               if (error != null) ...[
                                 const SizedBox(height: 12),
                                 Text(error!,
@@ -285,7 +341,11 @@ class _SignInPageState extends State<SignInPage> {
                               ],
                               const SizedBox(height: 18),
                               FilledButton(
-                                  onPressed: busy ? null : submit,
+                                  onPressed: busy
+                                      ? null
+                                      : (demoMode && !communitySignup
+                                          ? _openDemoPortal
+                                          : submit),
                                   style: FilledButton.styleFrom(
                                       backgroundColor: navy,
                                       foregroundColor: Colors.white,
@@ -303,7 +363,9 @@ class _SignInPageState extends State<SignInPage> {
                                               color: Colors.white))
                                       : Text(communitySignup
                                           ? 'Create account'
-                                          : 'Continue as ${selected.label}')),
+                                          : demoMode
+                                              ? 'Open ${selected.label} Demo'
+                                              : 'Continue as ${selected.label}')),
                               if (!communitySignup) ...[
                                 const SizedBox(height: 9),
                                 TextButton(
@@ -314,31 +376,32 @@ class _SignInPageState extends State<SignInPage> {
                                         }),
                                     child: const Text(
                                         'New to the school community? Create a People account')),
-                                TextButton(
-                                    onPressed: () async {
-                                      if (school.text.trim().isEmpty ||
-                                          email.text.trim().isEmpty) {
-                                        setState(() => error =
-                                            'Enter your school code and email first.');
-                                        return;
-                                      }
-                                      try {
-                                        await Api.post(
-                                            '/auth/recovery-request?institution_slug=${Uri.encodeQueryComponent(school.text.trim())}&email=${Uri.encodeQueryComponent(email.text.trim())}',
-                                            {});
-                                        if (mounted) {
+                                if (!demoMode)
+                                  TextButton(
+                                      onPressed: () async {
+                                        if (school.text.trim().isEmpty ||
+                                            email.text.trim().isEmpty) {
                                           setState(() => error =
-                                              'If the school exists, your request was routed to its administrator.');
+                                              'Enter your school code and email first.');
+                                          return;
                                         }
-                                      } catch (_) {
-                                        if (mounted) {
-                                          setState(() => error =
-                                              'Could not send the request. Check your connection.');
+                                        try {
+                                          await Api.post(
+                                              '/auth/recovery-request?institution_slug=${Uri.encodeQueryComponent(school.text.trim())}&email=${Uri.encodeQueryComponent(email.text.trim())}',
+                                              {});
+                                          if (mounted) {
+                                            setState(() => error =
+                                                'If the school exists, your request was routed to its administrator.');
+                                          }
+                                        } catch (_) {
+                                          if (mounted) {
+                                            setState(() => error =
+                                                'Could not send the request. Check your connection.');
+                                          }
                                         }
-                                      }
-                                    },
-                                    child:
-                                        const Text('Request account recovery')),
+                                      },
+                                      child: const Text(
+                                          'Request account recovery')),
                               ],
                               const SizedBox(height: 12),
                               const Text(
@@ -512,7 +575,9 @@ class _PortalPageState extends State<PortalPage> {
                           if (mounted) {
                             ScaffoldMessenger.of(this.context).showSnackBar(
                                 const SnackBar(
-                                    content: Text('Sent securely.')));
+                                    content: Text(demoMode
+                                        ? 'Demo only: saved in app memory; nothing was sent.'
+                                        : 'Sent securely.')));
                           }
                         } catch (e) {
                           if (mounted) {
@@ -560,6 +625,20 @@ class _PortalPageState extends State<PortalPage> {
           child: ListView(
               padding: const EdgeInsets.fromLTRB(18, 10, 18, 28),
               children: [
+                if (demoMode)
+                  Container(
+                      margin: const EdgeInsets.only(bottom: 14),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                          color: const Color(0xFFEDE7F6),
+                          borderRadius: BorderRadius.circular(12)),
+                      child: const Text(
+                          'DEMO MODE · sample data only · no backend requests',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              color: Color(0xFF4A3472),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700))),
                 if (!online)
                   Container(
                       margin: const EdgeInsets.only(bottom: 14),
@@ -934,9 +1013,7 @@ class _PortalPageState extends State<PortalPage> {
 
   Future<void> _loadPerformance() async {
     try {
-      final response = await http.get(Api.uri('/performance/me'),
-          headers: {'Authorization': 'Bearer ${widget.token}'});
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final data = await Api.getMap('/performance/me', widget.token);
       if (mounted) {
         showDialog<void>(
             context: context,
@@ -961,9 +1038,7 @@ class _PortalPageState extends State<PortalPage> {
 
   Future<void> _loadInbox() async {
     try {
-      final response = await http.get(Api.uri('/admin/inbox'),
-          headers: {'Authorization': 'Bearer ${widget.token}'});
-      final data = jsonDecode(response.body) as List<dynamic>;
+      final data = await Api.getList('/admin/inbox', widget.token);
       if (mounted) {
         showDialog<void>(
             context: context,
@@ -997,9 +1072,7 @@ class _PortalPageState extends State<PortalPage> {
 
   Future<void> _loadPersonalInbox() async {
     try {
-      final response = await http.get(Api.uri('/messages/inbox'),
-          headers: {'Authorization': 'Bearer ${widget.token}'});
-      final data = jsonDecode(response.body) as List<dynamic>;
+      final data = await Api.getList('/messages/inbox', widget.token);
       if (mounted) {
         showDialog<void>(
             context: context,

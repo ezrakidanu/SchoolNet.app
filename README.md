@@ -56,6 +56,12 @@ flutter build apk --release --dart-define=API_BASE_URL=https://api.example-schoo
 
 The development manifest alone permits local cleartext HTTP. Configure real release signing keys before distributing an APK; do not ship the scaffold's debug key.
 
+## Demo APK (no backend required)
+
+GitHub Actions also uploads a separate `schoolnet-app-demo-apk` artifact. It is built with `--dart-define=SCHOOLNET_DEMO_MODE=true`; open the app, choose a role (Administrator is selected by default), and tap **Open Administrator Demo**. The demo build bypasses HTTP for login, announcements, performance, inboxes and message submissions. Its sample messages exist only in app memory and are not delivered to a school. A visible demo banner marks sample data. Do not use real credentials or treat demo data as school records.
+
+The regular `schoolnet-app-release-apk` is built without the demo flag, so mock login and API responses are disabled by default. To build the demo locally, run `flutter build apk --release --dart-define=SCHOOLNET_DEMO_MODE=true` from `frontend/`.
+
 ## Implemented in this foundation
 
 - Five role identities: Administrator, Teacher, Student, Guidance & Counseling, and People/Community.
